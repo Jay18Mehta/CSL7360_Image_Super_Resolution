@@ -4,7 +4,7 @@ import torch.nn.functional as F
 from collections import OrderedDict
 
 class ESPCN(nn.Module):
-    def __init__(self, upscale_factor):
+    def __init__(self, upscale_factor=4):
         super(ESPCN, self).__init__()
         self.conv1 = nn.Conv2d(3, 64, kernel_size=5, padding=2)
         self.conv2 = nn.Conv2d(64, 32, kernel_size=3, padding=1)
