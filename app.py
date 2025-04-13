@@ -6,6 +6,7 @@ import os
 from models.lancros_interpolation import upsample_lancros
 from models.fourier_interpolation import fourier_upscale
 from models.autoencoder import autoencoder_upscale
+from models.espcn import espcn_upscale
 from models.sr_gan import srgan_upscale
 
 # ✅ New import for Random Forest Super Resolution
@@ -32,6 +33,13 @@ autoencoder_page = gr.Interface(
     inputs=[gr.Image(label="Low Resolution Image")],
     outputs=gr.Image(type="pil", label="High Resolution Images"),
     title="Autoencoder based Super Resolution"
+)
+
+espcn_page = gr.Interface(
+    fn=espcn_upscale,
+    inputs=[gr.Image(label="Low Resolution Image")],
+    outputs=gr.Image(type="pil", label="High Resolution Images"),
+    title="ESPCN based Super Resolution"
 )
 
 srgan_page = gr.Interface(
