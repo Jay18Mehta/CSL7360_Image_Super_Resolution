@@ -64,4 +64,4 @@ demo = gr.TabbedInterface(
 )
 
 if __name__ == "__main__":
-    demo.launch(server_name="172.31.94.47")
+    demo.launch(debug=True)
