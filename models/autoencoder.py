@@ -1,6 +1,8 @@
 import torch
 import torch.nn as nn
 from collections import OrderedDict
+from PIL import Image,ImageOps
+import numpy as np
 
 class Autoencoder(nn.Module):
     def __init__(self):
@@ -34,6 +36,12 @@ class Autoencoder(nn.Module):
         return x
     
 def autoencoder_upscale(image):
+    image = Image.fromarray(image)
+    target_size = (128, 128)
+    pad_color=(0, 0, 0)
+    ImageOps.pad(image, target_size, method=Image.BICUBIC, color=pad_color)
+    image = np.array(image)
+
     image = image/255
     image = torch.from_numpy(image).float().unsqueeze(dim=0).permute(0,3,1,2)
 
@@ -55,4 +63,3 @@ def autoencoder_upscale(image):
     output = output.squeeze(0).permute(1, 2, 0).cpu().numpy()
     output = (output * 255.0).clip(0, 255).astype("uint8")
     return output 
-

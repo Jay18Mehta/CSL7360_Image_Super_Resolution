@@ -1,8 +1,8 @@
 import torch
 import torch.nn as nn
 from collections import OrderedDict
-
-import torch.nn as nn
+import numpy as np
+from PIL import Image,ImageOps
 
 class ResidualBlock(nn.Module):
     def __init__(self, channels):
@@ -58,6 +58,12 @@ class Generator(nn.Module):
     
 
 def srgan_upscale(image):
+    image = Image.fromarray(image)
+    target_size = (128, 128)
+    pad_color=(0, 0, 0)
+    ImageOps.pad(image, target_size, method=Image.BICUBIC, color=pad_color)
+    image = np.array(image)
+
     image = image/255
     image = torch.from_numpy(image).float().unsqueeze(dim=0).permute(0,3,1,2)
 
