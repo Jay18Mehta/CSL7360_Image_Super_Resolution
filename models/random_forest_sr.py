@@ -1,58 +1,79 @@
 import numpy as np
-from skimage import color, transform, util
+from skimage import transform, util, color
 from sklearn.ensemble import RandomForestRegressor
 from skimage.util import view_as_windows
 from PIL import Image
 
-def extract_patches(image, patch_size=(4, 4), step=4):
-    patches = view_as_windows(image, patch_size, step=step)
-    n_patches = patches.shape[0] * patches.shape[1]
-    return patches.reshape(n_patches, -1)
+# CONFIGURATION
+PATCH_SIZE = (3, 3)
+STEP = 1
+N_ESTIMATORS = 10
+MAX_DEPTH = 10
+SCALE_FACTOR = 2
+SAMPLE_PATCHES = 10000  # Controls speed/accuracy trade-off
 
-def reconstruct_image_from_patches(patches, image_shape, patch_size=(4, 4), step=4):
-    h, w = image_shape
-    out = np.zeros((h, w))
-    weight = np.zeros((h, w))
+def extract_patches(img, patch_size, step):
+    patches = view_as_windows(img, patch_size, step)
+    h, w = patches.shape[:2]
+    return patches.reshape(h * w, -1)
+
+def train_rf(X, y):
+    rf = RandomForestRegressor(
+        n_estimators=N_ESTIMATORS,
+        max_depth=MAX_DEPTH,
+        n_jobs=-1
+    )
+    rf.fit(X, y)
+    return rf
+
+def predict_and_reconstruct(model, lr_img, patch_size, step, out_shape):
+    lr_patches = extract_patches(lr_img, patch_size, step)
+    preds = model.predict(lr_patches)
+
+    patch_h, patch_w = patch_size
+    img_h = (lr_img.shape[0] - patch_h) // step + 1
+    img_w = (lr_img.shape[1] - patch_w) // step + 1
+
+    result = np.zeros(out_shape)
+    weight = np.zeros(out_shape)
 
     idx = 0
-    for i in range(0, h - patch_size[0] + 1, step):
-        for j in range(0, w - patch_size[1] + 1, step):
-            patch = patches[idx].reshape(patch_size)
-            out[i:i+patch_size[0], j:j+patch_size[1]] += patch
-            weight[i:i+patch_size[0], j:j+patch_size[1]] += 1
+    for i in range(img_h):
+        for j in range(img_w):
+            patch = preds[idx].reshape(patch_h, patch_w)
+            result[i*step:i*step+patch_h, j*step:j*step+patch_w] += patch
+            weight[i*step:i*step+patch_h, j*step:j*step+patch_w] += 1
             idx += 1
 
-    return (out / weight)
+    weight[weight == 0] = 1
+    return result / weight
 
-def random_forest_upscale(lr_image_pil):
-    # Convert to grayscale and numpy
-    lr_image = np.array(lr_image_pil)
-    if lr_image.ndim == 3:
-        lr_image = color.rgb2gray(lr_image)
+def random_forest_upscale(pil_img: Image.Image) -> Image.Image:
+    img = np.array(pil_img) / 255.0  # Normalize
+    if img.ndim == 2:
+        img = np.expand_dims(img, axis=-1)
 
-    # Resize to create high-resolution image
-    hr_image = transform.rescale(lr_image, 2.0, anti_aliasing=True)
-    hr_image = (hr_image * 255).astype(np.uint8)
+    hr_shape = (img.shape[0] * SCALE_FACTOR, img.shape[1] * SCALE_FACTOR)
+    sr_channels = []
 
-    # Downscale the HR image again to simulate LR input
-    lr_simulated = transform.rescale(hr_image, 0.5, anti_aliasing=True)
+    for c in range(img.shape[2]):
+        channel = img[:, :, c]
+        hr_channel = transform.resize(channel, hr_shape, anti_aliasing=True)
+        lr_channel = transform.resize(hr_channel, (hr_shape[0] // SCALE_FACTOR, hr_shape[1] // SCALE_FACTOR), anti_aliasing=True)
+        lr_channel_up = transform.resize(lr_channel, hr_shape, anti_aliasing=True)
 
-    # Prepare data
-    patch_size = (4, 4)
-    X_train = extract_patches(lr_simulated, patch_size)
-    y_train = extract_patches(hr_image, patch_size)
+        X = extract_patches(lr_channel_up, PATCH_SIZE, STEP)
+        y = extract_patches(hr_channel, PATCH_SIZE, STEP)
 
-    # Train Random Forest
-    rf = RandomForestRegressor(n_estimators=10)
-    rf.fit(X_train, y_train)
+        if X.shape[0] > SAMPLE_PATCHES:
+            idx = np.random.choice(X.shape[0], SAMPLE_PATCHES, replace=False)
+            X = X[idx]
+            y = y[idx]
 
-    # Predict
-    X_test = extract_patches(lr_image, patch_size)
-    y_pred = rf.predict(X_test)
+        rf_model = train_rf(X, y)
+        sr = predict_and_reconstruct(rf_model, lr_channel_up, PATCH_SIZE, STEP, hr_shape)
+        sr_channels.append(sr)
 
-    # Reconstruct
-    out = reconstruct_image_from_patches(y_pred, hr_image.shape, patch_size)
-    out = np.clip(out, 0, 255).astype(np.uint8)
-
-    # Return PIL image
-    return Image.fromarray(out)
+    sr_image = np.stack(sr_channels, axis=-1)
+    sr_image = np.clip(sr_image * 255, 0, 255).astype(np.uint8)
+    return Image.fromarray(sr_image)
